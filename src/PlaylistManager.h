@@ -10,7 +10,7 @@ class PlaylistManager {
 public:
     PlaylistManager();
     
-    // Mode Management
+    // Add directory to scan
     void addMode(String path);
     void setMode(int index);
     void loadMode(); // Load from NVS
@@ -29,6 +29,7 @@ public:
     String prev(); // Add previous song support
     void remove(String path);
     size_t count() const;
+    size_t getCurrentIndex() const { return _currentSongIndex; }
     void printList();
 
 private:

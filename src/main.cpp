@@ -10,6 +10,7 @@
 #include "InputManager.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include "ui/UIManager.h"
 
 // Globals
 Audio audio;
@@ -18,7 +19,7 @@ InputManager input;
 Preferences prefs;
 
 // Volume state
-int currentVolume = 10; // 0-21
+int currentVolume = 5; // Default 5
 bool isLedEnabled = true;
 uint8_t ledHue = 0;
 unsigned long lastLedUpdate = 0;
@@ -96,6 +97,11 @@ void playNext() {
             Serial.printf("Playing: %s\n", nextFile.c_str());
             audio.connecttoFS(SD, nextFile.c_str());
             skipCount = 0; // Reset counter on success
+            
+            #ifdef ENABLE_DISPLAY
+            ui.updateSongInfo(nextFile, playlist.getCurrentIndex() + 1, playlist.count());
+            ui.updateStatus(playlist.getCurrentModeName(), currentVolume, true);
+            #endif
         } else {
             Serial.printf("File missing: %s, removing from playlist...\n", nextFile.c_str());
             playlist.remove(nextFile);
@@ -122,6 +128,11 @@ void playPrev() {
             Serial.printf("Playing: %s\n", prevFile.c_str());
             audio.connecttoFS(SD, prevFile.c_str());
             skipCount = 0;
+            
+            #ifdef ENABLE_DISPLAY
+            ui.updateSongInfo(prevFile, playlist.getCurrentIndex() + 1, playlist.count());
+            ui.updateStatus(playlist.getCurrentModeName(), currentVolume, true);
+            #endif
         } else {
             Serial.printf("File missing: %s, removing from playlist...\n", prevFile.c_str());
             playlist.remove(prevFile);
@@ -185,6 +196,12 @@ void switch_to_other_app() {
 void setup() {
     Serial.begin(115200);
     
+    #ifdef ENABLE_DISPLAY
+    // Init UI first to show boot status
+    ui.begin();
+    ui.updateStatus("Booting...", 0, false);
+    #endif
+    
     // PSRAM Check
     if (psramInit()) {
         Serial.printf("PSRAM initialized. Free: %d bytes\n", ESP.getFreePsram());
@@ -221,10 +238,13 @@ void setup() {
 
     // Input Setup
     input.onPlayPause([]() {
-        if (audio.isRunning()) {
-            audio.pauseResume();
-            Serial.println("Pause/Resume");
-        }
+        // Always try to toggle pause/resume regardless of state
+        // The library handles internal state checks
+        audio.pauseResume();
+        Serial.println("Pause/Resume");
+        #ifdef ENABLE_DISPLAY
+        ui.updateStatus(playlist.getCurrentModeName(), currentVolume, audio.isRunning());
+        #endif
     });
 
     input.onVolumeUp([]() {
@@ -236,6 +256,10 @@ void setup() {
             prefs.begin("settings", false);
             prefs.putInt("volume", currentVolume);
             prefs.end();
+            
+            #ifdef ENABLE_DISPLAY
+            ui.updateVolume(currentVolume);
+            #endif
         }
     });
 
@@ -248,6 +272,10 @@ void setup() {
             prefs.begin("settings", false);
             prefs.putInt("volume", currentVolume);
             prefs.end();
+            
+            #ifdef ENABLE_DISPLAY
+            ui.updateVolume(currentVolume);
+            #endif
         }
     });
 
@@ -263,6 +291,11 @@ void setup() {
 
     // Start Playback
     blinkLED(3, 0, 16, 0); // Blink Green (Success)
+    
+    #ifdef ENABLE_DISPLAY
+    ui.updateStatus(playlist.getCurrentModeName(), currentVolume, true);
+    #endif
+    
     playNext();
 }
 
@@ -271,6 +304,17 @@ void loop() {
     input.loop();
     // playlist.loop(); // Removed background scan
     updateLED();
+
+    #ifdef ENABLE_DISPLAY
+    ui.updateVisualizer();
+    static unsigned long lastUIUpdate = 0;
+    if (millis() - lastUIUpdate > 500) {
+        lastUIUpdate = millis();
+        if (audio.isRunning()) {
+            ui.updateProgress(audio.getAudioCurrentTime(), audio.getAudioFileDuration());
+        }
+    }
+    #endif
 
     // Check if song finished (requires Audio library callback or polling)
     // The Audio library handles EOF by calling audio_eof_mp3 or generic eof.

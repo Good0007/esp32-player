@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 
 # ---------------- 配置区域 ----------------
 # 你的播放器中定义的模式列表（顺序必须与代码中一致！）
@@ -51,6 +52,46 @@ def clean_directory(root_path):
     if deleted_count > 0:
         print(f"🧹 共清理 {deleted_count} 个非音频文件")
 
+def remove_duplicates(root_path):
+    """
+    删除重复的文件（例如：如果有 'song.mp3' 和 'song_1.mp3'，则删除 'song_1.mp3'）
+    """
+    deleted_count = 0
+    # 匹配模式：文件名_数字.后缀 (例如: music_1.mp3)
+    # group(1): 原文件名
+    # group(2): 数字
+    # group(3): 后缀
+    pattern = re.compile(r'(.+)_(\d+)(\.\w+)$')
+    
+    for root, dirs, files in os.walk(root_path):
+        # 过滤隐藏目录
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in IGNORE_NAMES]
+        
+        # 将当前目录下的所有文件放入集合，方便快速查找
+        existing_files = set(files)
+        
+        for file in files:
+            if file.startswith('.'): continue
+            
+            match = pattern.match(file)
+            if match:
+                base_name = match.group(1)
+                ext = match.group(3)
+                original_file = base_name + ext
+                
+                # 如果存在原文件（不带_N的），则认为当前文件是副本
+                if original_file in existing_files:
+                    file_path = os.path.join(root, file)
+                    try:
+                        os.remove(file_path)
+                        print(f"✂️  已删除副本: {file} (原文件: {original_file})")
+                        deleted_count += 1
+                    except Exception as e:
+                        print(f"❌ 删除失败 {file}: {e}")
+    
+    if deleted_count > 0:
+        print(f"🧹 共清理 {deleted_count} 个重复副本文件")
+
 def scan_directory(root_dir, mode_path):
     """
     扫描指定模式目录下的所有音频文件
@@ -71,6 +112,7 @@ def scan_directory(root_dir, mode_path):
     
     # 执行清理
     clean_directory(full_scan_path)
+    remove_duplicates(full_scan_path)
     
     for root, dirs, files in os.walk(full_scan_path):
         # 过滤隐藏目录

@@ -35,7 +35,7 @@
 #define DISPLAY_CLK_PIN       GPIO_NUM_8
 #define DISPLAY_DC_PIN        GPIO_NUM_16
 #define DISPLAY_RST_PIN       GPIO_NUM_17
-#define DISPLAY_CS_PIN        GPIO_NUM_NC
+#define DISPLAY_CS_PIN        -1
 
 // Screen Config
 #define DISPLAY_WIDTH   240

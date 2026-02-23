@@ -4,7 +4,7 @@
 #include <random>
 #include <SD.h> // Ensure SD access
 
-PlaylistManager::PlaylistManager() : _currentModeIndex(-1), _currentSongIndex(0) {}
+PlaylistManager::PlaylistManager() : _currentModeIndex(-1), _currentSongIndex(-1) {}
 
 void PlaylistManager::addMode(String path) {
     _modes.push_back(path);
@@ -189,18 +189,24 @@ void PlaylistManager::shuffle() {
     std::mt19937 g(esp_random());
     std::shuffle(_playlist.begin(), _playlist.end(), g);
     
-    _currentSongIndex = 0;
+    _currentSongIndex = -1;
     Serial.println("Playlist shuffled");
 }
 
 String PlaylistManager::next() {
     if (_playlist.empty()) return "";
     
-    if (_currentSongIndex >= _playlist.size()) {
-        shuffle(); // Reshuffle when list ends
+    _currentSongIndex++;
+    if (_currentSongIndex >= (int)_playlist.size()) {
+        // Option 1: Loop back to 0 without shuffle
+        // _currentSongIndex = 0;
+        
+        // Option 2: Reshuffle and start from 0
+        shuffle(); 
+        _currentSongIndex = 0; 
     }
     
-    return _playlist[_currentSongIndex++];
+    return _playlist[_currentSongIndex];
 }
 
 String PlaylistManager::prev() {
