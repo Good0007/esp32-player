@@ -95,13 +95,14 @@ void playNext() {
     if (nextFile.length() > 0) {
         if (SD.exists(nextFile)) {
             Serial.printf("Playing: %s\n", nextFile.c_str());
-            audio.connecttoFS(SD, nextFile.c_str());
-            skipCount = 0; // Reset counter on success
             
             #ifdef ENABLE_DISPLAY
             ui.updateSongInfo(nextFile, playlist.getCurrentIndex() + 1, playlist.count());
             ui.updateStatus(playlist.getCurrentModeName(), currentVolume, true);
             #endif
+            
+            audio.connecttoFS(SD, nextFile.c_str());
+            skipCount = 0; // Reset counter on success
         } else {
             Serial.printf("File missing: %s, removing from playlist...\n", nextFile.c_str());
             playlist.remove(nextFile);
@@ -126,13 +127,14 @@ void playPrev() {
     if (prevFile.length() > 0) {
         if (SD.exists(prevFile)) {
             Serial.printf("Playing: %s\n", prevFile.c_str());
-            audio.connecttoFS(SD, prevFile.c_str());
-            skipCount = 0;
             
             #ifdef ENABLE_DISPLAY
             ui.updateSongInfo(prevFile, playlist.getCurrentIndex() + 1, playlist.count());
             ui.updateStatus(playlist.getCurrentModeName(), currentVolume, true);
             #endif
+            
+            audio.connecttoFS(SD, prevFile.c_str());
+            skipCount = 0;
         } else {
             Serial.printf("File missing: %s, removing from playlist...\n", prevFile.c_str());
             playlist.remove(prevFile);
@@ -144,12 +146,18 @@ void playPrev() {
 
 void nextMode() {
     blinkLED(2, 0, 0, 16); // Blink Blue
+    #ifdef ENABLE_DISPLAY
+    ui.showLoading("Loading...");
+    #endif
     playlist.nextMode();
     playNext();
 }
 
 void prevMode() {
     blinkLED(2, 0, 0, 16); // Blink Blue
+    #ifdef ENABLE_DISPLAY
+    ui.showLoading("Loading...");
+    #endif
     playlist.prevMode();
     playNext();
 }
@@ -211,8 +219,8 @@ void setup() {
 
     // SPI & SD Setup
     SPI.begin(SD_CLK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
-    // Increase SPI frequency to 16MHz for faster scanning
-    if (!SD.begin(SD_CS_PIN, SPI, 16000000)) {
+    // Increase SPI frequency to 20MHz for faster scanning and reading
+    if (!SD.begin(SD_CS_PIN, SPI, 20000000)) {
         Serial.println("SD Mount Failed");
         return;
     }
@@ -224,6 +232,9 @@ void setup() {
     playlist.addMode("/音乐");
     
     // Load last mode
+    #ifdef ENABLE_DISPLAY
+    ui.showLoading("Loading...");
+    #endif
     playlist.loadMode();
 
     // Load Volume & LED
@@ -312,6 +323,7 @@ void loop() {
         lastUIUpdate = millis();
         if (audio.isRunning()) {
             ui.updateProgress(audio.getAudioCurrentTime(), audio.getAudioFileDuration());
+            ui.updateBitrate(audio.getBitRate());
         }
     }
     #endif

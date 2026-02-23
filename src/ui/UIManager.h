@@ -17,6 +17,7 @@ public:
     void updateStatus(String modeName, int volume, bool isPlaying);
     void updateVolume(int volume);
     void updateBitrate(int bitrate); // New method
+    void showLoading(String message); // New method
     
     // Theme
     void nextTheme();
@@ -29,11 +30,12 @@ private:
     Theme _currentTheme;
     int _themeIndex;
     
-    // Cache to avoid flickering
+    // Cache to avoid flickering// State cache
     String _lastSongName;
     String _lastMode;
     int _lastVolume;
     bool _lastIsPlaying;
+    int _lastBitrate = 0; // Cache bitrate
     
     // Scrolling state
     int _songNameWidth = 0;
