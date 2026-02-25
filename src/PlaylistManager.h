@@ -30,6 +30,7 @@ public:
     void remove(String path);
     size_t count() const;
     size_t getCurrentIndex() const { return _currentSongIndex; }
+    size_t getModeCount() const { return _modes.size(); }
     void printList();
 
 private:

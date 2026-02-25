@@ -38,6 +38,7 @@ void PlaylistManager::setMode(int index) {
         Serial.println("Cache miss, full scanning SD...");
         
         // Full scan
+        // Use stored path (now includes slash from config.h)
         scan(SD, _modes[_currentModeIndex].c_str(), 2);
         
         // Save cache immediately
@@ -72,7 +73,11 @@ void PlaylistManager::prevMode() {
 
 String PlaylistManager::getCurrentModeName() {
     if (_currentModeIndex >= 0 && _currentModeIndex < (int)_modes.size()) {
-        return _modes[_currentModeIndex];
+        String name = _modes[_currentModeIndex];
+        if (name.startsWith("/")) {
+            return name.substring(1);
+        }
+        return name;
     }
     return "Unknown";
 }
@@ -176,6 +181,7 @@ bool PlaylistManager::isAudioFile(String filename) {
     filename.toLowerCase();
     return filename.endsWith(".mp3") || 
            filename.endsWith(".aac") || 
+           filename.endsWith(".m4a") || 
            filename.endsWith(".flac") || 
            filename.endsWith(".ogg") ||
            filename.endsWith(".wav");

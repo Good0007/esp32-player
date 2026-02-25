@@ -239,9 +239,17 @@ void UIManager::updateStatus(String modeName, int volume, bool isPlaying) {
     _lastVolume = volume;
     _lastIsPlaying = isPlaying;
     
-    // Index is handled in updateSongInfo, but if we want to persist it, we need to cache index?
-    // Actually updateStatus is called frequently. Index doesn't change often.
-    // Let's assume Index area (Top Left) is safe.
+    // Mode Name - Top Center
+    // Clear center area: 80 to 160 (80px width) to avoid overlap with Index(Left) and Volume(Right)
+    _lcd.fillRect(80, 0, 80, 24, _currentTheme.statusBgColor);
+    
+    _lcd.setTextColor(_currentTheme.textColor, _currentTheme.statusBgColor);
+    int modeW = _lcd.textWidth(modeName);
+    // Center alignment
+    int modeX = (240 - modeW) / 2;
+    // Vertical center: (24 - 16) / 2 = 4
+    _lcd.setCursor(modeX, 4);
+    _lcd.print(modeName);
     
     // Play Icon - Bottom Middle
     int iconX = 114;
@@ -249,10 +257,12 @@ void UIManager::updateStatus(String modeName, int volume, bool isPlaying) {
     _lcd.fillRect(iconX, iconY, 12, 12, _currentTheme.bgColor);
     
     if (isPlaying) {
-        _lcd.fillTriangle(iconX, iconY, iconX, iconY+12, iconX+12, iconY+6, _currentTheme.highlightColor);
-    } else {
+        // Playing -> Show Pause Bars (White)
         _lcd.fillRect(iconX, iconY, 4, 12, _currentTheme.textColor);
         _lcd.fillRect(iconX+8, iconY, 4, 12, _currentTheme.textColor);
+    } else {
+        // Paused -> Show Play Triangle (White)
+        _lcd.fillTriangle(iconX, iconY, iconX, iconY+12, iconX+12, iconY+6, _currentTheme.textColor);
     }
     
     // Volume - Top Right

@@ -29,6 +29,12 @@
 // 挂载点 (SPIFFS/SD)
 #define MOUNT_POINT "/sdcard"
 
+// 播放列表分类目录
+#define PLAYLIST_DIR_CHILDREN "/儿歌"
+#define PLAYLIST_DIR_MUSIC    "/音乐"
+#define PLAYLIST_DIR_POEM     "/古诗"
+#define PLAYLIST_DIR_STORY    "/故事"
+
 // ---- 屏幕-预留 -----
 #define DISPLAY_BACKLIGHT_PIN GPIO_NUM_15
 #define DISPLAY_MOSI_PIN      GPIO_NUM_18

@@ -18,6 +18,10 @@ PlaylistManager playlist;
 InputManager input;
 Preferences prefs;
 
+// Async mode-switch flags (set in button callbacks, processed in loop)
+static volatile bool g_nextModeRequest = false;
+static volatile bool g_prevModeRequest = false;
+
 // Volume state
 int currentVolume = 5; // Default 5
 bool isLedEnabled = true;
@@ -110,7 +114,23 @@ void playNext() {
             playNext(); // Recursive skip
         }
     } else {
-        Serial.println("Playlist empty!");
+        Serial.println("Playlist empty! Auto-switching to next mode...");
+        // 空列表时自动切换到下一个模式，避免系统无响应
+        static int emptyModeCount = 0;
+        if (emptyModeCount < (int)playlist.getModeCount()) {
+            emptyModeCount++;
+            playlist.nextMode();
+            skipCount = 0;
+            playNext();
+        } else {
+            // 所有模式都是空的
+            emptyModeCount = 0;
+            Serial.println("All playlists empty!");
+            #ifdef ENABLE_DISPLAY
+            ui.updateSongInfo("No Music Found", 0, 0);
+            ui.updateStatus(playlist.getCurrentModeName(), currentVolume, false);
+            #endif
+        }
     }
 }
 
@@ -141,25 +161,30 @@ void playPrev() {
             skipCount++;
             playPrev();
         }
+    } else {
+        #ifdef ENABLE_DISPLAY
+        ui.updateSongInfo("No Music Found", 0, 0);
+        #endif
     }
 }
 
 void nextMode() {
-    blinkLED(2, 0, 0, 16); // Blink Blue
+    // 不在此处 blinkLED（含 delay），避免阻塞 input.loop()
     #ifdef ENABLE_DISPLAY
     ui.showLoading("Loading...");
     #endif
     playlist.nextMode();
     playNext();
+    blinkLED(2, 0, 0, 16); // 切换完成后再闪灯
 }
 
 void prevMode() {
-    blinkLED(2, 0, 0, 16); // Blink Blue
     #ifdef ENABLE_DISPLAY
     ui.showLoading("Loading...");
     #endif
     playlist.prevMode();
     playNext();
+    blinkLED(2, 0, 0, 16);
 }
 
 void switch_to_other_app() {
@@ -213,6 +238,8 @@ void setup() {
     // PSRAM Check
     if (psramInit()) {
         Serial.printf("PSRAM initialized. Free: %d bytes\n", ESP.getFreePsram());
+        // Do NOT set custom buffer size as it causes AAC decoder crashes and overflows
+        // audio.setBufsize(30000, 4096); 
     } else {
         Serial.println("PSRAM init failed!");
     }
@@ -220,22 +247,25 @@ void setup() {
     // SPI & SD Setup
     SPI.begin(SD_CLK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
     // Increase SPI frequency to 20MHz for faster scanning and reading
-    if (!SD.begin(SD_CS_PIN, SPI, 20000000)) {
+    bool sdSuccess = SD.begin(SD_CS_PIN, SPI, 20000000);
+    if (!sdSuccess) {
         Serial.println("SD Mount Failed");
-        return;
+        #ifdef ENABLE_DISPLAY
+        ui.showLoading("请插入SD卡");
+        #endif
+    } else {
+        // Setup Modes
+        playlist.addMode(PLAYLIST_DIR_CHILDREN);
+        playlist.addMode(PLAYLIST_DIR_MUSIC);
+        playlist.addMode(PLAYLIST_DIR_POEM);
+        playlist.addMode(PLAYLIST_DIR_STORY);
+        
+        // Load last mode
+        #ifdef ENABLE_DISPLAY
+        ui.showLoading("Loading...");
+        #endif
+        playlist.loadMode();
     }
-    
-    // Setup Modes
-    playlist.addMode("/儿歌");
-    playlist.addMode("/古诗");
-    playlist.addMode("/故事");
-    playlist.addMode("/音乐");
-    
-    // Load last mode
-    #ifdef ENABLE_DISPLAY
-    ui.showLoading("Loading...");
-    #endif
-    playlist.loadMode();
 
     // Load Volume & LED
     prefs.begin("settings", false);
@@ -292,28 +322,49 @@ void setup() {
 
     input.onNextSong(playNext);
     input.onPrevSong(playPrev);
-    input.onNextMode(nextMode);
-    input.onPrevMode(prevMode);
+    // 使用标志位异步触发，避免在回调中直接扫描 SD 卡导致 input.loop() 长时间阻塞
+    input.onNextMode([]() { g_nextModeRequest = true; });
+    input.onPrevMode([]() { g_prevModeRequest = true; });
     
     input.onModeDoubleClick(toggleLed);
     input.onFunctionLongPress(switch_to_other_app);
 
     input.begin();
 
-    // Start Playback
-    blinkLED(3, 0, 16, 0); // Blink Green (Success)
-    
-    #ifdef ENABLE_DISPLAY
-    ui.updateStatus(playlist.getCurrentModeName(), currentVolume, true);
-    #endif
-    
-    playNext();
+    // Start Playback only if SD is OK
+    if (sdSuccess) {
+        blinkLED(3, 0, 16, 0); // Blink Green (Success)
+        
+        #ifdef ENABLE_DISPLAY
+        ui.updateStatus(playlist.getCurrentModeName(), currentVolume, true);
+        #endif
+        
+        playNext();
+    } else {
+        blinkLED(3, 16, 0, 0); // Blink Red (Failure)
+        
+        #ifdef ENABLE_DISPLAY
+        ui.updateStatus("", currentVolume, false);
+        ui.showLoading("请插入SD卡");
+        #endif
+    }
 }
 
 void loop() {
-    audio.loop();
+    // input.loop() 必须最优先，保证 OneButton 时序不受 audio.loop() 耗时影响
     input.loop();
-    // playlist.loop(); // Removed background scan
+
+    // 异步处理模式切换（扫描 SD 会阻塞数百毫秒，不能在回调中直接做）
+    if (g_nextModeRequest) {
+        g_nextModeRequest = false;
+        nextMode();
+    }
+    if (g_prevModeRequest) {
+        g_prevModeRequest = false;
+        prevMode();
+    }
+
+    audio.loop();
     updateLED();
 
     #ifdef ENABLE_DISPLAY
