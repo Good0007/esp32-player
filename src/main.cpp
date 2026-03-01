@@ -18,7 +18,10 @@ PlaylistManager playlist;
 InputManager input;
 Preferences prefs;
 
-// Async mode-switch flags (set in button callbacks, processed in loop)
+// Async flags (set in button callbacks, processed in loop to avoid blocking in ISR/callback context)
+static volatile bool g_pauseResumeRequest = false;
+static volatile bool g_nextSongRequest = false;
+static volatile bool g_prevSongRequest = false;
 static volatile bool g_nextModeRequest = false;
 static volatile bool g_prevModeRequest = false;
 
@@ -54,19 +57,15 @@ void setRainbowColor(uint8_t wheelPos) {
 }
 
 void updateLED() {
-    if (!isLedEnabled) {
+    // 所有 neopixelWrite 调用都必须限频，ESP32-S3 的 RMT 外设在高频调用时可能阻塞
+    unsigned long now = millis();
+    if (now - lastLedUpdate < 50) return; // 全局 50ms 节流
+    lastLedUpdate = now;
+
+    if (!isLedEnabled || !audio.isRunning()) {
         neopixelWrite(BUILTIN_LED_GPIO, 0, 0, 0);
-        return;
-    }
-    
-    if (audio.isRunning()) {
-        unsigned long now = millis();
-        if (now - lastLedUpdate > 50) { // Update every 50ms
-            lastLedUpdate = now;
-            setRainbowColor(ledHue++);
-        }
     } else {
-        neopixelWrite(BUILTIN_LED_GPIO, 0, 0, 0); // Off when paused
+        setRainbowColor(ledHue++);
     }
 }
 
@@ -278,15 +277,8 @@ void setup() {
     audio.setVolume(currentVolume);
 
     // Input Setup
-    input.onPlayPause([]() {
-        // Always try to toggle pause/resume regardless of state
-        // The library handles internal state checks
-        audio.pauseResume();
-        Serial.println("Pause/Resume");
-        #ifdef ENABLE_DISPLAY
-        ui.updateStatus(playlist.getCurrentModeName(), currentVolume, audio.isRunning());
-        #endif
-    });
+    // 使用标志位异步触发，避免在回调中直接调用 audio API 导致 I2S/DMA 阻塞
+    input.onPlayPause([]() { g_pauseResumeRequest = true; });
 
     input.onVolumeUp([]() {
         if (currentVolume < 21) {
@@ -320,9 +312,9 @@ void setup() {
         }
     });
 
-    input.onNextSong(playNext);
-    input.onPrevSong(playPrev);
-    // 使用标志位异步触发，避免在回调中直接扫描 SD 卡导致 input.loop() 长时间阻塞
+    // 全部使用标志位异步触发，避免在回调中阻塞 input.loop()
+    input.onNextSong([]() { g_nextSongRequest = true; });
+    input.onPrevSong([]() { g_prevSongRequest = true; });
     input.onNextMode([]() { g_nextModeRequest = true; });
     input.onPrevMode([]() { g_prevModeRequest = true; });
     
@@ -354,7 +346,23 @@ void loop() {
     // input.loop() 必须最优先，保证 OneButton 时序不受 audio.loop() 耗时影响
     input.loop();
 
-    // 异步处理模式切换（扫描 SD 会阻塞数百毫秒，不能在回调中直接做）
+    // 异步处理所有耗时操作（audio API / SD 读写不能在回调中直接调用）
+    if (g_pauseResumeRequest) {
+        g_pauseResumeRequest = false;
+        audio.pauseResume();
+        Serial.printf("Pause/Resume -> running: %d\n", audio.isRunning());
+        #ifdef ENABLE_DISPLAY
+        ui.updateStatus(playlist.getCurrentModeName(), currentVolume, audio.isRunning());
+        #endif
+    }
+    if (g_nextSongRequest) {
+        g_nextSongRequest = false;
+        playNext();
+    }
+    if (g_prevSongRequest) {
+        g_prevSongRequest = false;
+        playPrev();
+    }
     if (g_nextModeRequest) {
         g_nextModeRequest = false;
         nextMode();
@@ -365,6 +373,12 @@ void loop() {
     }
 
     audio.loop();
+
+    // 暂停时 audio.loop() 瞬间返回，主循环跑满 CPU，需要主动让出时间片
+    if (!audio.isRunning()) {
+        delay(1);
+    }
+
     updateLED();
 
     #ifdef ENABLE_DISPLAY
